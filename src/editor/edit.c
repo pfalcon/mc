@@ -138,37 +138,8 @@ static const struct edit_filters
 
 static off_t last_bracket = -1;
 
-/*** file scope functions ************************************************************************/
 /* --------------------------------------------------------------------------------------------- */
-
-/*-
- *
- * here's a quick sketch of the layout: (don't run this through indent.)
- *
- * (b1 is buffers1 and b2 is buffers2)
- *
- *                                       |
- * \0\0\0\0\0m e _ f i l e . \nf i n . \n|T h i s _ i s _ s o\0\0\0\0\0\0\0\0\0
- * ______________________________________|______________________________________
- *                                       |
- * ...  |  b2[2]   |  b2[1]   |  b2[0]   |  b1[0]   |  b1[1]   |  b1[2]   | ...
- *      |->        |->        |->        |->        |->        |->        |
- *                                       |
- *           _<------------------------->|<----------------->_
- *                   WEdit->curs2        |   WEdit->curs1
- *           ^                           |                   ^
- *           |                          ^|^                  |
- *         cursor                       |||                cursor
- *                                      |||
- *                              file end|||file beginning
- *                                       |
- *                                       |
- *
- *           _
- * This_is_some_file
- * fin.
- */
-
+/*** file scope functions ************************************************************************/
 /* --------------------------------------------------------------------------------------------- */
 /**
  * Initialize the buffers for an empty files.
@@ -181,13 +152,13 @@ edit_init_buffers (WEdit * edit)
 
     for (j = 0; j <= MAXBUFF; j++)
     {
-        edit->buffers1[j] = NULL;
-        edit->buffers2[j] = NULL;
+        edit->buffer.buffers1[j] = NULL;
+        edit->buffer.buffers2[j] = NULL;
     }
 
-    edit->curs1 = 0;
-    edit->curs2 = 0;
-    edit->buffers2[0] = g_malloc0 (EDIT_BUF_SIZE);
+    edit->buffer.curs1 = 0;
+    edit->buffer.curs2 = 0;
+    edit->buffer.buffers2[0] = g_malloc0 (EDIT_BUF_SIZE);
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -218,23 +189,23 @@ edit_load_file_fast (WEdit * edit, const vfs_path_t * filename_vpath)
         return FALSE;
     }
 
-    edit->curs2 = edit->last_byte;
-    buf2 = edit->curs2 >> S_EDIT_BUF_SIZE;
+    edit->buffer.curs2 = edit->last_byte;
+    buf2 = edit->buffer.curs2 >> S_EDIT_BUF_SIZE;
 
-    if (edit->buffers2[buf2] == NULL)
-        edit->buffers2[buf2] = g_malloc0 (EDIT_BUF_SIZE);
+    if (edit->buffer.buffers2[buf2] == NULL)
+        edit->buffer.buffers2[buf2] = g_malloc0 (EDIT_BUF_SIZE);
 
     if (mc_read (file,
-                 (char *) edit->buffers2[buf2] + EDIT_BUF_SIZE -
-                 (edit->curs2 & M_EDIT_BUF_SIZE), edit->curs2 & M_EDIT_BUF_SIZE) < 0)
+                 (char *) edit->buffer.buffers2[buf2] + EDIT_BUF_SIZE -
+                 (edit->buffer.curs2 & M_EDIT_BUF_SIZE), edit->buffer.curs2 & M_EDIT_BUF_SIZE) < 0)
         goto done;
 
     for (buf = buf2 - 1; buf >= 0; buf--)
     {
-        /* edit->buffers2[0] is already allocated */
-        if (edit->buffers2[buf] == NULL)
-            edit->buffers2[buf] = g_malloc0 (EDIT_BUF_SIZE);
-        if (mc_read (file, (char *) edit->buffers2[buf], EDIT_BUF_SIZE) < 0)
+        /* edit->buffer.buffers2[0] is already allocated */
+        if (edit->buffer.buffers2[buf] == NULL)
+            edit->buffer.buffers2[buf] = g_malloc0 (EDIT_BUF_SIZE);
+        if (mc_read (file, (char *) edit->buffer.buffers2[buf], EDIT_BUF_SIZE) < 0)
             goto done;
     }
 
@@ -512,12 +483,12 @@ edit_load_position (WEdit * edit)
     {
         edit_cursor_move (edit, offset);
         line = edit->curs_line;
-        edit->search_start = edit->curs1;
+        edit->search_start = edit->buffer.curs1;
     }
 
     book_mark_restore (edit, BOOK_MARK_COLOR);
 
-    edit_move_to_prev_col (edit, edit_bol (edit, edit->curs1));
+    edit_move_to_prev_col (edit, edit_bol (edit, edit->buffer.curs1));
     edit_move_display (edit, line - (WIDGET (edit)->lines / 2));
 }
 
@@ -532,7 +503,7 @@ edit_save_position (WEdit * edit)
         return;
 
     book_mark_serialize (edit, BOOK_MARK_COLOR);
-    save_file_position (edit->filename_vpath, edit->curs_line + 1, edit->curs_col, edit->curs1,
+    save_file_position (edit->filename_vpath, edit->curs_line + 1, edit->curs_col, edit->buffer.curs1,
                         edit->serialized_bookmarks);
     edit->serialized_bookmarks = NULL;
 }
@@ -657,19 +628,19 @@ edit_modification (WEdit * edit)
 static char *
 edit_get_byte_ptr (const WEdit * edit, off_t byte_index)
 {
-    if (byte_index >= (edit->curs1 + edit->curs2) || byte_index < 0)
+    if (byte_index >= (edit->buffer.curs1 + edit->buffer.curs2) || byte_index < 0)
         return NULL;
 
-    if (byte_index >= edit->curs1)
+    if (byte_index >= edit->buffer.curs1)
     {
         off_t p;
 
-        p = edit->curs1 + edit->curs2 - byte_index - 1;
-        return (char *) (edit->buffers2[p >> S_EDIT_BUF_SIZE] +
+        p = edit->buffer.curs1 + edit->buffer.curs2 - byte_index - 1;
+        return (char *) (edit->buffer.buffers2[p >> S_EDIT_BUF_SIZE] +
                          (EDIT_BUF_SIZE - (p & M_EDIT_BUF_SIZE) - 1));
     }
 
-    return (char *) (edit->buffers1[byte_index >> S_EDIT_BUF_SIZE] +
+    return (char *) (edit->buffer.buffers1[byte_index >> S_EDIT_BUF_SIZE] +
                      (byte_index & M_EDIT_BUF_SIZE));
 }
 
@@ -684,7 +655,7 @@ edit_get_prev_utf (const WEdit * edit, off_t byte_index, int *char_width)
     gchar *str;
     gchar *cursor_buf_ptr;
 
-    if (byte_index > (edit->curs1 + edit->curs2) || byte_index <= 0)
+    if (byte_index > (edit->buffer.curs1 + edit->buffer.curs2) || byte_index <= 0)
     {
         *char_width = 0;
         return 0;
@@ -735,7 +706,7 @@ is_in_indent (const WEdit * edit)
 {
     off_t p;
 
-    for (p = edit_bol (edit, edit->curs1); p < edit->curs1; p++)
+    for (p = edit_bol (edit, edit->buffer.curs1); p < edit->buffer.curs1; p++)
         if (strchr (" \t", edit_get_byte (edit, p)) == NULL)
             return FALSE;
 
@@ -783,7 +754,7 @@ edit_find_line (WEdit * edit, long line)
         memset (edit->line_offsets, 0, sizeof (edit->line_offsets));
         /* three offsets that we *know* are line 0 at 0 and these two: */
         edit->line_numbers[1] = edit->curs_line;
-        edit->line_offsets[1] = edit_bol (edit, edit->curs1);
+        edit->line_offsets[1] = edit_bol (edit, edit->buffer.curs1);
         edit->line_numbers[2] = edit->total_lines;
         edit->line_offsets[2] = edit_bol (edit, edit->last_byte);
         edit->caches_valid = TRUE;
@@ -919,7 +890,7 @@ edit_move_to_top (WEdit * edit)
 {
     if (edit->curs_line)
     {
-        edit_cursor_move (edit, -edit->curs1);
+        edit_cursor_move (edit, -edit->buffer.curs1);
         edit_move_to_prev_col (edit, 0);
         edit->force |= REDRAW_PAGE;
         edit->search_start = 0;
@@ -950,8 +921,8 @@ edit_move_to_bottom (WEdit * edit)
 static void
 edit_cursor_to_bol (WEdit * edit)
 {
-    edit_cursor_move (edit, edit_bol (edit, edit->curs1) - edit->curs1);
-    edit->search_start = edit->curs1;
+    edit_cursor_move (edit, edit_bol (edit, edit->buffer.curs1) - edit->buffer.curs1);
+    edit->search_start = edit->buffer.curs1;
     edit->prev_col = edit_get_col (edit);
     edit->over_col = 0;
 }
@@ -962,8 +933,8 @@ edit_cursor_to_bol (WEdit * edit)
 static void
 edit_cursor_to_eol (WEdit * edit)
 {
-    edit_cursor_move (edit, edit_eol (edit, edit->curs1) - edit->curs1);
-    edit->search_start = edit->curs1;
+    edit_cursor_move (edit, edit_eol (edit, edit->buffer.curs1) - edit->buffer.curs1);
+    edit->search_start = edit->buffer.curs1;
     edit->prev_col = edit_get_col (edit);
     edit->over_col = 0;
 }
@@ -1021,13 +992,13 @@ edit_left_word_move (WEdit * edit, int s)
 
         if (edit->column_highlight
             && edit->mark1 != edit->mark2
-            && edit->over_col == 0 && edit->curs1 == edit_bol (edit, edit->curs1))
+            && edit->over_col == 0 && edit->buffer.curs1 == edit_bol (edit, edit->buffer.curs1))
             break;
         edit_cursor_move (edit, -1);
-        if (edit->curs1 == 0)
+        if (edit->buffer.curs1 == 0)
             break;
-        c1 = edit_get_byte (edit, edit->curs1 - 1);
-        c2 = edit_get_byte (edit, edit->curs1);
+        c1 = edit_get_byte (edit, edit->buffer.curs1 - 1);
+        c2 = edit_get_byte (edit, edit->buffer.curs1);
         if (c1 == '\n' || c2 == '\n')
             break;
         if ((my_type_of (c1) & my_type_of (c2)) == 0)
@@ -1059,13 +1030,13 @@ edit_right_word_move (WEdit * edit, int s)
 
         if (edit->column_highlight
             && edit->mark1 != edit->mark2
-            && edit->over_col == 0 && edit->curs1 == edit_eol (edit, edit->curs1))
+            && edit->over_col == 0 && edit->buffer.curs1 == edit_eol (edit, edit->buffer.curs1))
             break;
         edit_cursor_move (edit, 1);
-        if (edit->curs1 >= edit->last_byte)
+        if (edit->buffer.curs1 >= edit->last_byte)
             break;
-        c1 = edit_get_byte (edit, edit->curs1 - 1);
-        c2 = edit_get_byte (edit, edit->curs1);
+        c1 = edit_get_byte (edit, edit->buffer.curs1 - 1);
+        c2 = edit_get_byte (edit, edit->buffer.curs1);
         if (c1 == '\n' || c2 == '\n')
             break;
         if ((my_type_of (c1) & my_type_of (c2)) == 0)
@@ -1096,14 +1067,14 @@ edit_right_char_move_cmd (WEdit * edit)
 #ifdef HAVE_CHARSET
     if (edit->utf8)
     {
-        c = edit_get_utf (edit, edit->curs1, &cw);
+        c = edit_get_utf (edit, edit->buffer.curs1, &cw);
         if (cw < 1)
             cw = 1;
     }
     else
 #endif
     {
-        c = edit_get_byte (edit, edit->curs1);
+        c = edit_get_byte (edit, edit->buffer.curs1);
     }
     if (option_cursor_beyond_eol && c == '\n')
     {
@@ -1124,12 +1095,12 @@ edit_left_char_move_cmd (WEdit * edit)
     if (edit->column_highlight
         && option_cursor_beyond_eol
         && edit->mark1 != edit->mark2
-        && edit->over_col == 0 && edit->curs1 == edit_bol (edit, edit->curs1))
+        && edit->over_col == 0 && edit->buffer.curs1 == edit_bol (edit, edit->buffer.curs1))
         return;
 #ifdef HAVE_CHARSET
     if (edit->utf8)
     {
-        edit_get_prev_utf (edit, edit->curs1, &cw);
+        edit_get_prev_utf (edit, edit->buffer.curs1, &cw);
         if (cw < 1)
             cw = 1;
     }
@@ -1171,25 +1142,25 @@ edit_move_updown (WEdit * edit, long lines, gboolean do_scroll, gboolean directi
         else
             edit_scroll_downward (edit, lines);
     }
-    p = edit_bol (edit, edit->curs1);
+    p = edit_bol (edit, edit->buffer.curs1);
 
     p = direction ? edit_move_backward (edit, p, lines) : edit_move_forward (edit, p, lines, 0);
 
-    edit_cursor_move (edit, p - edit->curs1);
+    edit_cursor_move (edit, p - edit->buffer.curs1);
 
     edit_move_to_prev_col (edit, p);
 
 #ifdef HAVE_CHARSET
     /* search start of current multibyte char (like CJK) */
-    if (edit->curs1 > 0 && edit->curs1 + 1 < edit->last_byte
-        && edit_get_byte (edit, edit->curs1) >= 256 )
+    if (edit->buffer.curs1 > 0 && edit->buffer.curs1 + 1 < edit->last_byte
+        && edit_get_byte (edit, edit->buffer.curs1) >= 256 )
     {
         edit_right_char_move_cmd (edit);
         edit_left_char_move_cmd (edit);
     }
 #endif
 
-    edit->search_start = edit->curs1;
+    edit->search_start = edit->buffer.curs1;
     edit->found_len = 0;
 }
 
@@ -1198,12 +1169,12 @@ edit_move_updown (WEdit * edit, long lines, gboolean do_scroll, gboolean directi
 static void
 edit_right_delete_word (WEdit * edit)
 {
-    while (edit->curs1 < edit->last_byte)
+    while (edit->buffer.curs1 < edit->last_byte)
     {
         int c1, c2;
 
         c1 = edit_delete (edit, TRUE);
-        c2 = edit_get_byte (edit, edit->curs1);
+        c2 = edit_get_byte (edit, edit->buffer.curs1);
         if (c1 == '\n' || c2 == '\n')
             break;
         if ((isspace (c1) == 0) != (isspace (c2) == 0))
@@ -1218,12 +1189,12 @@ edit_right_delete_word (WEdit * edit)
 static void
 edit_left_delete_word (WEdit * edit)
 {
-    while (edit->curs1 > 0)
+    while (edit->buffer.curs1 > 0)
     {
         int c1, c2;
 
         c1 = edit_backspace (edit, TRUE);
-        c2 = edit_get_byte (edit, edit->curs1 - 1);
+        c2 = edit_get_byte (edit, edit->buffer.curs1 - 1);
         if (c1 == '\n' || c2 == '\n')
             break;
         if ((isspace (c1) == 0) != (isspace (c2) == 0))
@@ -1417,7 +1388,7 @@ edit_group_undo (WEdit * edit)
 static void
 edit_delete_to_line_end (WEdit * edit)
 {
-    while (edit_get_byte (edit, edit->curs1) != '\n' && edit->curs2 != 0)
+    while (edit_get_byte (edit, edit->buffer.curs1) != '\n' && edit->buffer.curs2 != 0)
         edit_delete (edit, TRUE);
 }
 
@@ -1426,7 +1397,7 @@ edit_delete_to_line_end (WEdit * edit)
 static void
 edit_delete_to_line_begin (WEdit * edit)
 {
-    while (edit_get_byte (edit, edit->curs1 - 1) != '\n' && edit->curs1 != 0)
+    while (edit_get_byte (edit, edit->buffer.curs1 - 1) != '\n' && edit->buffer.curs1 != 0)
         edit_backspace (edit, TRUE);
 }
 
@@ -1450,7 +1421,7 @@ right_of_four_spaces (WEdit * edit)
     int i, ch = 0;
 
     for (i = 1; i <= HALF_TAB_SIZE; i++)
-        ch |= edit_get_byte (edit, edit->curs1 - i);
+        ch |= edit_get_byte (edit, edit->buffer.curs1 - i);
 
     return (ch == ' ' && is_aligned_on_a_tab (edit));
 }
@@ -1463,7 +1434,7 @@ left_of_four_spaces (WEdit * edit)
     int i, ch = 0;
 
     for (i = 0; i < HALF_TAB_SIZE; i++)
-        ch |= edit_get_byte (edit, edit->curs1 + i);
+        ch |= edit_get_byte (edit, edit->buffer.curs1 + i);
 
     return (ch == ' ' && is_aligned_on_a_tab (edit));
 }
@@ -1476,7 +1447,7 @@ edit_auto_indent (WEdit * edit)
     off_t p;
     char c;
 
-    p = edit->curs1;
+    p = edit->buffer.curs1;
     /* use the previous line as a template */
     p = edit_move_backward (edit, p, 1);
     /* copy the leading whitespace of the line */
@@ -1495,7 +1466,7 @@ static inline void
 edit_double_newline (WEdit * edit)
 {
     edit_insert (edit, '\n');
-    if (edit_get_byte (edit, edit->curs1) == '\n' || edit_get_byte (edit, edit->curs1 - 2) == '\n')
+    if (edit_get_byte (edit, edit->buffer.curs1) == '\n' || edit_get_byte (edit, edit->buffer.curs1 - 2) == '\n')
         return;
     edit->force |= REDRAW_PAGE;
     edit_insert (edit, '\n');
@@ -1563,7 +1534,7 @@ check_and_wrap_line (WEdit * edit)
     edit_update_curs_col (edit);
     if (edit->curs_col < option_word_wrap_line_length)
         return;
-    curs = edit->curs1;
+    curs = edit->buffer.curs1;
     while (TRUE)
     {
         curs--;
@@ -1575,10 +1546,10 @@ check_and_wrap_line (WEdit * edit)
         }
         if (c == ' ' || c == '\t')
         {
-            off_t current = edit->curs1;
-            edit_cursor_move (edit, curs - edit->curs1 + 1);
+            off_t current = edit->buffer.curs1;
+            edit_cursor_move (edit, curs - edit->buffer.curs1 + 1);
             edit_insert (edit, '\n');
-            edit_cursor_move (edit, current - edit->curs1 + 1);
+            edit_cursor_move (edit, current - edit->buffer.curs1 + 1);
             return;
         }
     }
@@ -1602,7 +1573,7 @@ edit_get_bracket (WEdit * edit, gboolean in_screen, unsigned long furthest_brack
     unsigned long j = 0;
     off_t q;
     edit_update_curs_row (edit);
-    c = edit_get_byte (edit, edit->curs1);
+    c = edit_get_byte (edit, edit->buffer.curs1);
     p = strchr (b, c);
     /* no limit */
     if (!furthest_bracket_search)
@@ -1615,7 +1586,7 @@ edit_get_bracket (WEdit * edit, gboolean in_screen, unsigned long furthest_brack
     /* going left or right? */
     if (strchr ("{[(", c))
         inc = 1;
-    for (q = edit->curs1 + inc;; q += inc)
+    for (q = edit->buffer.curs1 + inc;; q += inc)
     {
         /* out of buffer? */
         if (q >= edit->last_byte || q < 0)
@@ -1654,9 +1625,9 @@ edit_goto_matching_bracket (WEdit * edit)
     q = edit_get_bracket (edit, 0, 0);
     if (q >= 0)
     {
-        edit->bracket = edit->curs1;
+        edit->bracket = edit->buffer.curs1;
         edit->force |= REDRAW_PAGE;
-        edit_cursor_move (edit, q - edit->curs1);
+        edit_cursor_move (edit, q - edit->buffer.curs1);
     }
 }
 
@@ -1676,14 +1647,14 @@ edit_move_block_to_right (WEdit * edit)
 
     do
     {
-        edit_cursor_move (edit, cur_bol - edit->curs1);
+        edit_cursor_move (edit, cur_bol - edit->buffer.curs1);
         if (!edit_line_is_blank (edit, edit->curs_line))
         {
             if (option_fill_tabs_with_spaces)
                 insert_spaces_tab (edit, option_fake_half_tabs);
             else
                 edit_insert (edit, '\t');
-            edit_cursor_move (edit, edit_bol (edit, cur_bol) - edit->curs1);
+            edit_cursor_move (edit, edit_bol (edit, cur_bol) - edit->buffer.curs1);
         }
 
         if (cur_bol == 0)
@@ -1716,14 +1687,14 @@ edit_move_block_to_left (WEdit * edit)
         int del_tab_width;
         int next_char;
 
-        edit_cursor_move (edit, cur_bol - edit->curs1);
+        edit_cursor_move (edit, cur_bol - edit->buffer.curs1);
 
         if (option_fake_half_tabs)
             del_tab_width = HALF_TAB_SIZE;
         else
             del_tab_width = option_tab_spacing;
 
-        next_char = edit_get_byte (edit, edit->curs1);
+        next_char = edit_get_byte (edit, edit->buffer.curs1);
         if (next_char == '\t')
             edit_delete (edit, TRUE);
         else if (next_char == ' ')
@@ -1731,7 +1702,7 @@ edit_move_block_to_left (WEdit * edit)
             {
                 if (next_char == ' ')
                     edit_delete (edit, TRUE);
-                next_char = edit_get_byte (edit, edit->curs1);
+                next_char = edit_get_byte (edit, edit->buffer.curs1);
             }
 
         if (cur_bol == 0)
@@ -1773,7 +1744,7 @@ edit_insert_column_from_file (WEdit * edit, int file, off_t * start_pos, off_t *
     off_t blocklen = -1, width = 0;
     unsigned char *data;
 
-    cursor = edit->curs1;
+    cursor = edit->buffer.curs1;
     col = edit_get_col (edit);
     data = g_malloc0 (TEMP_BUF_LEN);
 
@@ -1794,15 +1765,15 @@ edit_insert_column_from_file (WEdit * edit, int file, off_t * start_pos, off_t *
                 long l;
                 off_t p;
 
-                if (edit_get_byte (edit, edit->curs1) != '\n')
+                if (edit_get_byte (edit, edit->buffer.curs1) != '\n')
                     for (l = width - (edit_get_col (edit) - col); l > 0; l -= space_width)
                         edit_insert (edit, ' ');
 
-                for (p = edit->curs1;; p++)
+                for (p = edit->buffer.curs1;; p++)
                 {
                     if (p == edit->last_byte)
                     {
-                        edit_cursor_move (edit, edit->last_byte - edit->curs1);
+                        edit_cursor_move (edit, edit->last_byte - edit->buffer.curs1);
                         edit_insert_ahead (edit, '\n');
                         p++;
                         break;
@@ -1814,7 +1785,7 @@ edit_insert_column_from_file (WEdit * edit, int file, off_t * start_pos, off_t *
                     }
                 }
 
-                edit_cursor_move (edit, edit_move_forward3 (edit, p, col, 0) - edit->curs1);
+                edit_cursor_move (edit, edit_move_forward3 (edit, p, col, 0) - edit->buffer.curs1);
 
                 for (l = col - edit_get_col (edit); l >= space_width; l -= space_width)
                     edit_insert (edit, ' ');
@@ -1824,8 +1795,8 @@ edit_insert_column_from_file (WEdit * edit, int file, off_t * start_pos, off_t *
     *col1 = col;
     *col2 = col + width;
     *start_pos = cursor;
-    *end_pos = edit->curs1;
-    edit_cursor_move (edit, cursor - edit->curs1);
+    *end_pos = edit->buffer.curs1;
+    edit_cursor_move (edit, cursor - edit->buffer.curs1);
     g_free (data);
 
     return blocklen;
@@ -1849,7 +1820,7 @@ user_menu (WEdit * edit, const char *menu_file, int selected_entry)
 
     block_file = mc_config_get_full_path (EDIT_BLOCK_FILE);
     block_file_vpath = vfs_path_from_str (block_file);
-    curs = edit->curs1;
+    curs = edit->buffer.curs1;
     nomark = eval_marks (edit, &start_mark, &end_mark);
     if (nomark == 0)
         edit_save_block (edit, block_file, start_mark, end_mark);
@@ -1881,7 +1852,7 @@ user_menu (WEdit * edit, const char *menu_file, int selected_entry)
     g_free (block_file);
     vfs_path_free (block_file_vpath);
 
-    edit_cursor_move (edit, curs - edit->curs1);
+    edit_cursor_move (edit, curs - edit->buffer.curs1);
     edit->force |= REDRAW_PAGE;
     widget_redraw (WIDGET (edit));
 }
@@ -1911,7 +1882,7 @@ edit_get_utf (const WEdit * edit, off_t byte_index, int *char_width)
     int width = 0;
     gchar utf8_buf[UTF8_CHAR_LEN + 1];
 
-    if (byte_index >= (edit->curs1 + edit->curs2) || byte_index < 0)
+    if (byte_index >= (edit->buffer.curs1 + edit->buffer.curs2) || byte_index < 0)
     {
         *char_width = 0;
         return '\n';
@@ -2140,7 +2111,7 @@ edit_insert_file (WEdit * edit, const vfs_path_t * filename_vpath)
     off_t ins_len = 0;
 
     p = edit_get_filter (filename_vpath);
-    current = edit->curs1;
+    current = edit->buffer.curs1;
 
     if (p != NULL)
     {
@@ -2154,7 +2125,7 @@ edit_insert_file (WEdit * edit, const vfs_path_t * filename_vpath)
             /* Place cursor at the end of text selection */
             if (!option_cursor_after_inserted_block)
             {
-                ins_len = edit->curs1 - current;
+                ins_len = edit->buffer.curs1 - current;
                 edit_cursor_move (edit, -ins_len);
             }
             if (pclose (f) > 0)
@@ -2206,7 +2177,7 @@ edit_insert_file (WEdit * edit, const vfs_path_t * filename_vpath)
             long c1, c2;
 
             blocklen = edit_insert_column_from_file (edit, file, &mark1, &mark2, &c1, &c2);
-            edit_set_markers (edit, edit->curs1, mark2, c1, c2);
+            edit_set_markers (edit, edit->buffer.curs1, mark2, c1, c2);
 
             /* highlight inserted text then not persistent blocks */
             if (!option_persistent_selections && edit->modified)
@@ -2228,7 +2199,7 @@ edit_insert_file (WEdit * edit, const vfs_path_t * filename_vpath)
             /* highlight inserted text then not persistent blocks */
             if (!option_persistent_selections && edit->modified)
             {
-                edit_set_markers (edit, edit->curs1, current, 0, 0);
+                edit_set_markers (edit, edit->buffer.curs1, current, 0, 0);
                 if (edit->column_highlight)
                     edit_push_undo_action (edit, COLUMN_ON);
                 edit->column_highlight = 0;
@@ -2237,7 +2208,7 @@ edit_insert_file (WEdit * edit, const vfs_path_t * filename_vpath)
             /* Place cursor at the end of text selection */
             if (!option_cursor_after_inserted_block)
             {
-                ins_len = edit->curs1 - current;
+                ins_len = edit->buffer.curs1 - current;
                 edit_cursor_move (edit, -ins_len);
             }
         }
@@ -2412,8 +2383,8 @@ edit_clean (WEdit * edit)
     book_mark_flush (edit, -1);
     for (; j <= MAXBUFF; j++)
     {
-        g_free (edit->buffers1[j]);
-        g_free (edit->buffers2[j]);
+        g_free (edit->buffer.buffers1[j]);
+        g_free (edit->buffer.buffers2[j]);
     }
 
     g_free (edit->undo_stack);
@@ -2727,7 +2698,7 @@ edit_insert (WEdit * edit, int c)
         return;
 
     /* first we must update the position of the display window */
-    if (edit->curs1 < edit->start_display)
+    if (edit->buffer.curs1 < edit->start_display)
     {
         edit->start_display++;
         if (c == '\n')
@@ -2754,23 +2725,23 @@ edit_insert (WEdit * edit, int c)
     else
         edit_push_undo_action (edit, BACKSPACE_BR);
     /* update markers */
-    edit->mark1 += (edit->mark1 > edit->curs1);
-    edit->mark2 += (edit->mark2 > edit->curs1);
-    edit->last_get_rule += (edit->last_get_rule > edit->curs1);
+    edit->mark1 += (edit->mark1 > edit->buffer.curs1);
+    edit->mark2 += (edit->mark2 > edit->buffer.curs1);
+    edit->last_get_rule += (edit->last_get_rule > edit->buffer.curs1);
 
     /* add a new buffer if we've reached the end of the last one */
-    if (!(edit->curs1 & M_EDIT_BUF_SIZE))
-        edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
+    if (!(edit->buffer.curs1 & M_EDIT_BUF_SIZE))
+        edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
 
     /* perform the insertion */
-    edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE][edit->curs1 & M_EDIT_BUF_SIZE]
+    edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE][edit->buffer.curs1 & M_EDIT_BUF_SIZE]
         = (unsigned char) c;
 
     /* update file length */
     edit->last_byte++;
 
     /* update cursor position */
-    edit->curs1++;
+    edit->buffer.curs1++;
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -2782,7 +2753,7 @@ edit_insert_ahead (WEdit * edit, int c)
     if (edit->last_byte >= SIZE_LIMIT)
         return;
 
-    if (edit->curs1 < edit->start_display)
+    if (edit->buffer.curs1 < edit->start_display)
     {
         edit->start_display++;
         if (c == '\n')
@@ -2801,17 +2772,17 @@ edit_insert_ahead (WEdit * edit, int c)
     else
         edit_push_undo_action (edit, DELCHAR_BR);
 
-    edit->mark1 += (edit->mark1 >= edit->curs1);
-    edit->mark2 += (edit->mark2 >= edit->curs1);
-    edit->last_get_rule += (edit->last_get_rule >= edit->curs1);
+    edit->mark1 += (edit->mark1 >= edit->buffer.curs1);
+    edit->mark2 += (edit->mark2 >= edit->buffer.curs1);
+    edit->last_get_rule += (edit->last_get_rule >= edit->buffer.curs1);
 
-    if (!((edit->curs2 + 1) & M_EDIT_BUF_SIZE))
-        edit->buffers2[(edit->curs2 + 1) >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
-    edit->buffers2[edit->curs2 >> S_EDIT_BUF_SIZE]
-        [EDIT_BUF_SIZE - (edit->curs2 & M_EDIT_BUF_SIZE) - 1] = c;
+    if (!((edit->buffer.curs2 + 1) & M_EDIT_BUF_SIZE))
+        edit->buffer.buffers2[(edit->buffer.curs2 + 1) >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
+    edit->buffer.buffers2[edit->buffer.curs2 >> S_EDIT_BUF_SIZE]
+        [EDIT_BUF_SIZE - (edit->buffer.curs2 & M_EDIT_BUF_SIZE) - 1] = c;
 
     edit->last_byte++;
-    edit->curs2++;
+    edit->buffer.curs2++;
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -2836,14 +2807,14 @@ edit_delete (WEdit * edit, gboolean byte_delete)
     int cw = 1;
     int i;
 
-    if (edit->curs2 == 0)
+    if (edit->buffer.curs2 == 0)
         return 0;
 
 #ifdef HAVE_CHARSET
     /* if byte_delete == TRUE then delete only one byte not multibyte char */
     if (edit->utf8 && !byte_delete)
     {
-        edit_get_utf (edit, edit->curs1, &cw);
+        edit_get_utf (edit, edit->buffer.curs1, &cw);
         if (cw < 1)
             cw = 1;
     }
@@ -2856,27 +2827,27 @@ edit_delete (WEdit * edit, gboolean byte_delete)
 
     for (i = 1; i <= cw; i++)
     {
-        if (edit->mark1 > edit->curs1)
+        if (edit->mark1 > edit->buffer.curs1)
         {
             edit->mark1--;
             edit->end_mark_curs--;
         }
-        if (edit->mark2 > edit->curs1)
+        if (edit->mark2 > edit->buffer.curs1)
             edit->mark2--;
-        if (edit->last_get_rule > edit->curs1)
+        if (edit->last_get_rule > edit->buffer.curs1)
             edit->last_get_rule--;
 
-        p = edit->buffers2[(edit->curs2 - 1) >> S_EDIT_BUF_SIZE][EDIT_BUF_SIZE -
-                                                                 ((edit->curs2 -
+        p = edit->buffer.buffers2[(edit->buffer.curs2 - 1) >> S_EDIT_BUF_SIZE][EDIT_BUF_SIZE -
+                                                                 ((edit->buffer.curs2 -
                                                                    1) & M_EDIT_BUF_SIZE) - 1];
 
-        if (!(edit->curs2 & M_EDIT_BUF_SIZE))
+        if (!(edit->buffer.curs2 & M_EDIT_BUF_SIZE))
         {
-            g_free (edit->buffers2[edit->curs2 >> S_EDIT_BUF_SIZE]);
-            edit->buffers2[edit->curs2 >> S_EDIT_BUF_SIZE] = NULL;
+            g_free (edit->buffer.buffers2[edit->buffer.curs2 >> S_EDIT_BUF_SIZE]);
+            edit->buffer.buffers2[edit->buffer.curs2 >> S_EDIT_BUF_SIZE] = NULL;
         }
         edit->last_byte--;
-        edit->curs2--;
+        edit->buffer.curs2--;
         edit_push_undo_action (edit, p + 256);
     }
 
@@ -2887,7 +2858,7 @@ edit_delete (WEdit * edit, gboolean byte_delete)
         edit->total_lines--;
         edit->force |= REDRAW_AFTER_CURSOR;
     }
-    if (edit->curs1 < edit->start_display)
+    if (edit->buffer.curs1 < edit->start_display)
     {
         edit->start_display--;
         if (p == '\n')
@@ -2906,7 +2877,7 @@ edit_backspace (WEdit * edit, gboolean byte_delete)
     int cw = 1;
     int i;
 
-    if (edit->curs1 == 0)
+    if (edit->buffer.curs1 == 0)
         return 0;
 
     if (edit->mark2 != edit->mark1)
@@ -2915,7 +2886,7 @@ edit_backspace (WEdit * edit, gboolean byte_delete)
 #ifdef HAVE_CHARSET
     if (edit->utf8 && !byte_delete)
     {
-        edit_get_prev_utf (edit, edit->curs1, &cw);
+        edit_get_prev_utf (edit, edit->buffer.curs1, &cw);
         if (cw < 1)
             cw = 1;
     }
@@ -2925,25 +2896,25 @@ edit_backspace (WEdit * edit, gboolean byte_delete)
 
     for (i = 1; i <= cw; i++)
     {
-        if (edit->mark1 >= edit->curs1)
+        if (edit->mark1 >= edit->buffer.curs1)
         {
             edit->mark1--;
             edit->end_mark_curs--;
         }
-        if (edit->mark2 >= edit->curs1)
+        if (edit->mark2 >= edit->buffer.curs1)
             edit->mark2--;
-        if (edit->last_get_rule >= edit->curs1)
+        if (edit->last_get_rule >= edit->buffer.curs1)
             edit->last_get_rule--;
 
-        p = *(edit->buffers1[(edit->curs1 - 1) >> S_EDIT_BUF_SIZE] +
-              ((edit->curs1 - 1) & M_EDIT_BUF_SIZE));
-        if (((edit->curs1 - 1) & M_EDIT_BUF_SIZE) == 0)
+        p = *(edit->buffer.buffers1[(edit->buffer.curs1 - 1) >> S_EDIT_BUF_SIZE] +
+              ((edit->buffer.curs1 - 1) & M_EDIT_BUF_SIZE));
+        if (((edit->buffer.curs1 - 1) & M_EDIT_BUF_SIZE) == 0)
         {
-            g_free (edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE]);
-            edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE] = NULL;
+            g_free (edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE]);
+            edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE] = NULL;
         }
         edit->last_byte--;
-        edit->curs1--;
+        edit->buffer.curs1--;
         edit_push_undo_action (edit, p);
     }
     edit_modification (edit);
@@ -2955,7 +2926,7 @@ edit_backspace (WEdit * edit, gboolean byte_delete)
         edit->force |= REDRAW_AFTER_CURSOR;
     }
 
-    if (edit->curs1 < edit->start_display)
+    if (edit->buffer.curs1 < edit->start_display)
     {
         edit->start_display--;
         if (p == '\n')
@@ -2978,25 +2949,25 @@ edit_cursor_move (WEdit * edit, off_t increment)
     {
         for (; increment < 0; increment++)
         {
-            if (edit->curs1 == 0)
+            if (edit->buffer.curs1 == 0)
                 return;
 
             edit_push_undo_action (edit, CURS_RIGHT);
 
-            c = edit_get_byte (edit, edit->curs1 - 1);
-            if (!((edit->curs2 + 1) & M_EDIT_BUF_SIZE))
-                edit->buffers2[(edit->curs2 + 1) >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
-            edit->buffers2[edit->curs2 >> S_EDIT_BUF_SIZE][EDIT_BUF_SIZE -
-                                                           (edit->curs2 & M_EDIT_BUF_SIZE) - 1] = c;
-            edit->curs2++;
-            c = edit->buffers1[(edit->curs1 - 1) >> S_EDIT_BUF_SIZE][(edit->curs1 -
+            c = edit_get_byte (edit, edit->buffer.curs1 - 1);
+            if (!((edit->buffer.curs2 + 1) & M_EDIT_BUF_SIZE))
+                edit->buffer.buffers2[(edit->buffer.curs2 + 1) >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
+            edit->buffer.buffers2[edit->buffer.curs2 >> S_EDIT_BUF_SIZE][EDIT_BUF_SIZE -
+                                                           (edit->buffer.curs2 & M_EDIT_BUF_SIZE) - 1] = c;
+            edit->buffer.curs2++;
+            c = edit->buffer.buffers1[(edit->buffer.curs1 - 1) >> S_EDIT_BUF_SIZE][(edit->buffer.curs1 -
                                                                       1) & M_EDIT_BUF_SIZE];
-            if (!((edit->curs1 - 1) & M_EDIT_BUF_SIZE))
+            if (!((edit->buffer.curs1 - 1) & M_EDIT_BUF_SIZE))
             {
-                g_free (edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE]);
-                edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE] = NULL;
+                g_free (edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE]);
+                edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE] = NULL;
             }
-            edit->curs1--;
+            edit->buffer.curs1--;
             if (c == '\n')
             {
                 edit->curs_line--;
@@ -3009,25 +2980,25 @@ edit_cursor_move (WEdit * edit, off_t increment)
     {
         for (; increment > 0; increment--)
         {
-            if (edit->curs2 == 0)
+            if (edit->buffer.curs2 == 0)
                 return;
 
             edit_push_undo_action (edit, CURS_LEFT);
 
-            c = edit_get_byte (edit, edit->curs1);
-            if (!(edit->curs1 & M_EDIT_BUF_SIZE))
-                edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
-            edit->buffers1[edit->curs1 >> S_EDIT_BUF_SIZE][edit->curs1 & M_EDIT_BUF_SIZE] = c;
-            edit->curs1++;
-            c = edit->buffers2[(edit->curs2 - 1) >> S_EDIT_BUF_SIZE][EDIT_BUF_SIZE -
-                                                                     ((edit->curs2 -
+            c = edit_get_byte (edit, edit->buffer.curs1);
+            if (!(edit->buffer.curs1 & M_EDIT_BUF_SIZE))
+                edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE] = g_malloc0 (EDIT_BUF_SIZE);
+            edit->buffer.buffers1[edit->buffer.curs1 >> S_EDIT_BUF_SIZE][edit->buffer.curs1 & M_EDIT_BUF_SIZE] = c;
+            edit->buffer.curs1++;
+            c = edit->buffer.buffers2[(edit->buffer.curs2 - 1) >> S_EDIT_BUF_SIZE][EDIT_BUF_SIZE -
+                                                                     ((edit->buffer.curs2 -
                                                                        1) & M_EDIT_BUF_SIZE) - 1];
-            if (!(edit->curs2 & M_EDIT_BUF_SIZE))
+            if (!(edit->buffer.curs2 & M_EDIT_BUF_SIZE))
             {
-                g_free (edit->buffers2[edit->curs2 >> S_EDIT_BUF_SIZE]);
-                edit->buffers2[edit->curs2 >> S_EDIT_BUF_SIZE] = 0;
+                g_free (edit->buffer.buffers2[edit->buffer.curs2 >> S_EDIT_BUF_SIZE]);
+                edit->buffer.buffers2[edit->buffer.curs2 >> S_EDIT_BUF_SIZE] = 0;
             }
-            edit->curs2--;
+            edit->buffer.curs2--;
             if (c == '\n')
             {
                 edit->curs_line++;
@@ -3205,7 +3176,7 @@ edit_move_forward3 (const WEdit * edit, off_t current, long cols, off_t upto)
 long
 edit_get_col (const WEdit * edit)
 {
-    return (long) edit_move_forward3 (edit, edit_bol (edit, edit->curs1), 0, edit->curs1);
+    return (long) edit_move_forward3 (edit, edit_bol (edit, edit->buffer.curs1), 0, edit->buffer.curs1);
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -3223,7 +3194,7 @@ edit_update_curs_row (WEdit * edit)
 void
 edit_update_curs_col (WEdit * edit)
 {
-    edit->curs_col = (long) edit_move_forward3 (edit, edit_bol (edit, edit->curs1), 0, edit->curs1);
+    edit->curs_col = (long) edit_move_forward3 (edit, edit_bol (edit, edit->buffer.curs1), 0, edit->buffer.curs1);
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -3310,14 +3281,14 @@ edit_move_to_prev_col (WEdit * edit, off_t p)
     long prev = edit->prev_col;
     long over = edit->over_col;
 
-    edit_cursor_move (edit, edit_move_forward3 (edit, p, prev + edit->over_col, 0) - edit->curs1);
+    edit_cursor_move (edit, edit_move_forward3 (edit, p, prev + edit->over_col, 0) - edit->buffer.curs1);
 
     if (option_cursor_beyond_eol)
     {
         long line_len;
 
-        line_len = (long) edit_move_forward3 (edit, edit_bol (edit, edit->curs1), 0,
-                                              edit_eol (edit, edit->curs1));
+        line_len = (long) edit_move_forward3 (edit, edit_bol (edit, edit->buffer.curs1), 0,
+                                              edit_eol (edit, edit->buffer.curs1));
         if (line_len < prev + edit->over_col)
         {
             edit->over_col = prev + over - line_len;
@@ -3347,11 +3318,11 @@ edit_move_to_prev_col (WEdit * edit, off_t p)
 
                 q = edit->curs_col;
                 edit->curs_col -= (edit->curs_col % fake_half_tabs);
-                p = edit_bol (edit, edit->curs1);
+                p = edit_bol (edit, edit->buffer.curs1);
                 edit_cursor_move (edit,
-                                  edit_move_forward3 (edit, p, edit->curs_col, 0) - edit->curs1);
+                                  edit_move_forward3 (edit, p, edit->curs_col, 0) - edit->buffer.curs1);
                 if (!left_of_four_spaces (edit))
-                    edit_cursor_move (edit, edit_move_forward3 (edit, p, q, 0) - edit->curs1);
+                    edit_cursor_move (edit, edit_move_forward3 (edit, p, q, 0) - edit->buffer.curs1);
             }
         }
     }
@@ -3435,14 +3406,14 @@ edit_mark_cmd (WEdit * edit, gboolean unmark)
     else if (edit->mark2 >= 0)
     {
         edit->end_mark_curs = -1;
-        edit_set_markers (edit, edit->curs1, -1, edit->curs_col + edit->over_col,
+        edit_set_markers (edit, edit->buffer.curs1, -1, edit->curs_col + edit->over_col,
                           edit->curs_col + edit->over_col);
         edit->force |= REDRAW_PAGE;
     }
     else
     {
-        edit->end_mark_curs = edit->curs1;
-        edit_set_markers (edit, edit->mark1, edit->curs1, edit->column1,
+        edit->end_mark_curs = edit->buffer.curs1;
+        edit_set_markers (edit, edit->mark1, edit->buffer.curs1, edit->column1,
                           edit->curs_col + edit->over_col);
     }
 }
@@ -3455,7 +3426,7 @@ edit_mark_current_word_cmd (WEdit * edit)
 {
     long pos;
 
-    for (pos = edit->curs1; pos != 0; pos--)
+    for (pos = edit->buffer.curs1; pos != 0; pos--)
     {
         int c1, c2;
 
@@ -3489,7 +3460,7 @@ edit_mark_current_word_cmd (WEdit * edit)
 void
 edit_mark_current_line_cmd (WEdit * edit)
 {
-    long pos = edit->curs1;
+    long pos = edit->buffer.curs1;
 
     edit->mark1 = edit_bol (edit, pos);
     edit->mark2 = edit_eol (edit, pos);
@@ -3507,7 +3478,7 @@ edit_delete_line (WEdit * edit)
      * Note that edit_get_byte() returns '\n' when byte position is
      *   beyond EOF.
      */
-    while (edit_get_byte (edit, edit->curs1) != '\n')
+    while (edit_get_byte (edit, edit->buffer.curs1) != '\n')
         (void) edit_delete (edit, TRUE);
 
     /*
@@ -3521,7 +3492,7 @@ edit_delete_line (WEdit * edit)
      * Delete left part of the line.
      * Note, that edit_get_byte() returns '\n' when byte position is < 0.
      */
-    while (edit_get_byte (edit, edit->curs1 - 1) != '\n')
+    while (edit_get_byte (edit, edit->buffer.curs1 - 1) != '\n')
         (void) edit_backspace (edit, TRUE);
 }
 
@@ -3717,7 +3688,7 @@ edit_execute_cmd (WEdit * edit, unsigned long command, int char_for_insertion)
         edit_group_undo (edit);
         edit->found_len = 0;
         edit->prev_col = edit_get_col (edit);
-        edit->search_start = edit->curs1;
+        edit->search_start = edit->buffer.curs1;
         return;
     }
     /*  check for redo */
@@ -3727,7 +3698,7 @@ edit_execute_cmd (WEdit * edit, unsigned long command, int char_for_insertion)
         edit_do_redo (edit);
         edit->found_len = 0;
         edit->prev_col = edit_get_col (edit);
-        edit->search_start = edit->curs1;
+        edit->search_start = edit->buffer.curs1;
         return;
     }
 
@@ -3746,7 +3717,7 @@ edit_execute_cmd (WEdit * edit, unsigned long command, int char_for_insertion)
 #ifdef HAVE_CHARSET
             if (!mc_global.utf8_display || edit->charpoint == 0)
 #endif
-                if (edit_get_byte (edit, edit->curs1) != '\n')
+                if (edit_get_byte (edit, edit->buffer.curs1) != '\n')
 
                     edit_delete (edit, FALSE);
         }
@@ -3789,7 +3760,7 @@ edit_execute_cmd (WEdit * edit, unsigned long command, int char_for_insertion)
             check_and_wrap_line (edit);
         edit->found_len = 0;
         edit->prev_col = edit_get_col (edit);
-        edit->search_start = edit->curs1;
+        edit->search_start = edit->buffer.curs1;
         edit_find_bracket (edit);
         return;
     }
@@ -3855,7 +3826,7 @@ edit_execute_cmd (WEdit * edit, unsigned long command, int char_for_insertion)
             edit->over_col--;
         else if (option_backspace_through_tabs && is_in_indent (edit))
         {
-            while (edit_get_byte (edit, edit->curs1 - 1) != '\n' && edit->curs1 > 0)
+            while (edit_get_byte (edit, edit->buffer.curs1 - 1) != '\n' && edit->buffer.curs1 > 0)
                 edit_backspace (edit, TRUE);
         }
         else if (option_fake_half_tabs && is_in_indent (edit) && right_of_four_spaces (edit))
@@ -4351,13 +4322,13 @@ edit_execute_cmd (WEdit * edit, unsigned long command, int char_for_insertion)
     case CK_ScrollDown:
     case CK_MarkScrollDown:
     case CK_MarkColumnScrollDown:
-        edit->search_start = edit->curs1;
+        edit->search_start = edit->buffer.curs1;
         edit->found_len = 0;
         break;
     default:
         edit->found_len = 0;
         edit->prev_col = edit_get_col (edit);
-        edit->search_start = edit->curs1;
+        edit->search_start = edit->buffer.curs1;
     }
     edit_find_bracket (edit);
 
