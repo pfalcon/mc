@@ -2,13 +2,13 @@
    Panel layout module for the Midnight Commander
 
    Copyright (C) 1995, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007, 2009, 2011, 2012
+   2006, 2007, 2009, 2011, 2012, 2013
    The Free Software Foundation, Inc.
 
    Written by:
    Janne Kukonlehto, 1995
    Miguel de Icaza, 1995
-   Andrew Borodin <aborodin@vmail.ru>, 2011, 2012
+   Andrew Borodin <aborodin@vmail.ru>, 2011, 2012, 2013
 
    This file is part of the Midnight Commander.
 
@@ -812,14 +812,16 @@ setup_cmdline (void)
 {
     int prompt_len;
     int y;
-    char *tmp_prompt = NULL;
+    char *tmp_prompt = (char *) mc_prompt;
 
 #ifdef ENABLE_SUBSHELL
     if (mc_global.tty.use_subshell)
-        tmp_prompt = strip_ctrl_codes (subshell_prompt->str);
-    if (tmp_prompt == NULL)
+    {
+        tmp_prompt = g_string_free (subshell_prompt, FALSE);
+        (void) strip_ctrl_codes (tmp_prompt);
+    }
 #endif
-        tmp_prompt = (char *) mc_prompt;
+
     prompt_len = str_term_width1 (tmp_prompt);
 
     /* Check for prompts too big */
@@ -829,7 +831,14 @@ setup_cmdline (void)
         tmp_prompt[prompt_len] = '\0';
     }
 
-    mc_prompt = tmp_prompt;
+#ifdef ENABLE_SUBSHELL
+    if (mc_global.tty.use_subshell)
+    {
+        subshell_prompt = g_string_new (tmp_prompt);
+        g_free (tmp_prompt);
+        mc_prompt = subshell_prompt->str;
+    }
+#endif
 
     y = LINES - 1 - mc_global.keybar_visible;
 

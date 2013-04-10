@@ -2,7 +2,7 @@
    Concurrent shell support for the Midnight Commander
 
    Copyright (C) 1994, 1995, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007, 2011
+   2005, 2006, 2007, 2011, 2013
    The Free Software Foundation, Inc.
 
    This file is part of the Midnight Commander.
@@ -996,6 +996,8 @@ read_subshell_prompt (void)
     /* First time through */
     if (subshell_prompt == NULL)
         subshell_prompt = g_string_sized_new (INITIAL_PROMPT_SIZE);
+    else
+        g_string_set_size (subshell_prompt, 0);
 
     while (subshell_alive
            && (rc = select (mc_global.tty.subshell_pty + 1, &tmp, NULL, NULL, &timeleft)) != 0)
@@ -1020,7 +1022,6 @@ read_subshell_prompt (void)
         bytes = read (mc_global.tty.subshell_pty, pty_buffer, sizeof (pty_buffer));
 
         /* Extract the prompt from the shell output */
-        g_string_set_size (subshell_prompt, 0);
         for (i = 0; i < bytes; i++)
             if (pty_buffer[i] == '\n' || pty_buffer[i] == '\r')
                 g_string_set_size (subshell_prompt, 0);
