@@ -1,11 +1,11 @@
 /*
    Virtual File System path handlers
 
-   Copyright (C) 2011
+   Copyright (C) 2011, 2013
    The Free Software Foundation, Inc.
 
    Written by:
-   Slava Zanko <slavazanko@gmail.com>, 2011
+   Slava Zanko <slavazanko@gmail.com>, 2011, 2013
 
    This file is part of the Midnight Commander.
 
@@ -592,6 +592,19 @@ vfs_path_strip_home (const char *dir)
 }
 
 /* --------------------------------------------------------------------------------------------- */
+/**
+ * Convert vfs_path_t to string representation.
+ *
+ * @param vpath pointer to vfs_path_t object
+ *
+ * @return pointer to newly created string.
+ */
+
+static inline char *
+vfs_path_to_str (const vfs_path_t * vpath)
+{
+    return vfs_path_to_str_elements_count (vpath, vfs_path_elements_count (vpath));
+}
 
 /* --------------------------------------------------------------------------------------------- */
 /*** public functions ****************************************************************************/
@@ -715,21 +728,6 @@ vfs_path_to_str_elements_count (const vfs_path_t * vpath, int elements_count)
 
 /* --------------------------------------------------------------------------------------------- */
 /**
- * Convert vfs_path_t to string representation.
- *
- * @param vpath pointer to vfs_path_t object
- *
- * @return pointer to newly created string.
- */
-
-char *
-vfs_path_to_str (const vfs_path_t * vpath)
-{
-    return vfs_path_to_str_elements_count (vpath, vfs_path_elements_count (vpath));
-}
-
-/* --------------------------------------------------------------------------------------------- */
-/**
  * Split path string to path elements with flags for change parce process.
  *
  * @param path_str VFS-path
@@ -760,6 +758,7 @@ vfs_path_from_str_flags (const char *path_str, vfs_path_flag_t flags)
     else
         vpath = vfs_path_from_str_uri_parser (path, flags);
 
+    vpath->str = vfs_path_to_str (vpath);
     g_free (path);
 
     return vpath;
@@ -824,6 +823,8 @@ void
 vfs_path_add_element (const vfs_path_t * vpath, const vfs_path_element_t * path_element)
 {
     g_array_append_val (vpath->path, path_element);
+    g_free (vpath->str);
+    ((vfs_path_t *) vpath)->str = vfs_path_to_str (vpath);
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -944,6 +945,7 @@ vfs_path_clone (const vfs_path_t * vpath)
         path_element = vfs_path_element_clone (vfs_path_get_by_index (vpath, vpath_element_index));
         g_array_append_val (new_vpath->path, path_element);
     }
+    new_vpath->str = g_strdup (vpath->str);
 
     return new_vpath;
 }
@@ -974,6 +976,7 @@ vfs_path_free (vfs_path_t * vpath)
     }
 
     g_array_free (vpath->path, TRUE);
+    g_free (vpath->str);
     g_free (vpath);
 }
 
@@ -1000,6 +1003,8 @@ vfs_path_remove_element_by_index (vfs_path_t * vpath, int element_index)
     element = (vfs_path_element_t *) vfs_path_get_by_index (vpath, element_index);
     vpath->path = g_array_remove_index (vpath->path, element_index);
     vfs_path_element_free (element);
+    g_free (vpath->str);
+    vpath->str = vfs_path_to_str (vpath);
 }
 
 /* --------------------------------------------------------------------------------------------- */
@@ -1185,6 +1190,7 @@ vfs_path_deserialize (const char *data, GError ** error)
         g_set_error (error, MC_ERROR, -1, "No any path elements found");
         return NULL;
     }
+    vpath->str = vfs_path_to_str (vpath);
 
     return vpath;
 }
@@ -1290,6 +1296,8 @@ vfs_path_append_vpath_new (const vfs_path_t * first_vpath, ...)
     }
     while (current_vpath != NULL);
     va_end (args);
+
+    ret_vpath->str = vfs_path_to_str (ret_vpath);
 
     return ret_vpath;
 }
@@ -1597,16 +1605,10 @@ vfs_path_equal_len (const vfs_path_t * vpath1, const vfs_path_t * vpath2, size_t
 size_t
 vfs_path_len (const vfs_path_t * vpath)
 {
-    char *path;
-    size_t ret_val;
-
     if (vpath == NULL)
         return 0;
 
-    path = vfs_path_to_str (vpath);
-    ret_val = strlen (path);
-    g_free (path);
-    return ret_val;
+    return strlen (vpath->str);
 }
 
 /* --------------------------------------------------------------------------------------------- */

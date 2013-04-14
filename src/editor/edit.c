@@ -211,11 +211,9 @@ edit_load_file_fast (WEdit * edit, const vfs_path_t * filename_vpath)
     file = mc_open (filename_vpath, O_RDONLY | O_BINARY);
     if (file == -1)
     {
-        gchar *errmsg, *filename;
+        gchar *errmsg;
 
-        filename = vfs_path_to_str (filename_vpath);
-        errmsg = g_strdup_printf (_("Cannot open %s for reading"), filename);
-        g_free (filename);
+        errmsg = g_strdup_printf (_("Cannot open %s for reading"), filename_vpath->str);
         edit_error_dialog (_("Error"), errmsg);
         g_free (errmsg);
         return FALSE;
@@ -245,11 +243,9 @@ edit_load_file_fast (WEdit * edit, const vfs_path_t * filename_vpath)
 
     if (!ret)
     {
-        gchar *errmsg, *filename;
+        gchar *errmsg;
 
-        filename = vfs_path_to_str (filename_vpath);
-        errmsg = g_strdup_printf (_("Error reading %s"), filename);
-        g_free (filename);
+        errmsg = g_strdup_printf (_("Error reading %s"), filename_vpath->str);
         edit_error_dialog (_("Error"), errmsg);
         g_free (errmsg);
     }
@@ -264,24 +260,18 @@ static int
 edit_find_filter (const vfs_path_t * filename_vpath)
 {
     size_t i, l, e;
-    char *filename;
 
     if (filename_vpath == NULL)
         return -1;
 
-    filename = vfs_path_to_str (filename_vpath);
-    l = strlen (filename);
+    l = strlen (filename_vpath->str);
     for (i = 0; i < G_N_ELEMENTS (all_filters); i++)
     {
         e = strlen (all_filters[i].extension);
         if (l > e)
-            if (!strcmp (all_filters[i].extension, filename + l - e))
-            {
-                g_free (filename);
+            if (!strcmp (all_filters[i].extension, filename_vpath->str + l - e))
                 return i;
-            }
     }
-    g_free (filename);
     return -1;
 }
 
@@ -291,15 +281,13 @@ static char *
 edit_get_filter (const vfs_path_t * filename_vpath)
 {
     int i;
-    char *p, *quoted_name, *filename;
+    char *p, *quoted_name;
 
     i = edit_find_filter (filename_vpath);
     if (i < 0)
         return NULL;
 
-    filename = vfs_path_to_str (filename_vpath);
-    quoted_name = name_quote (filename, 0);
-    g_free (filename);
+    quoted_name = name_quote (filename_vpath->str, 0);
     p = g_strdup_printf (all_filters[i].read, quoted_name);
     g_free (quoted_name);
     return p;
@@ -347,11 +335,7 @@ check_file_access (WEdit * edit, const vfs_path_t * filename_vpath, struct stat 
         file = mc_open (filename_vpath, O_NONBLOCK | O_RDONLY | O_BINARY | O_CREAT | O_EXCL, 0666);
         if (file < 0)
         {
-            char *filename;
-
-            filename = vfs_path_to_str (filename_vpath);
-            errmsg = g_strdup_printf (_("Cannot open %s for reading"), filename);
-            g_free (filename);
+            errmsg = g_strdup_printf (_("Cannot open %s for reading"), filename_vpath->str);
             goto cleanup;
         }
 
@@ -362,22 +346,14 @@ check_file_access (WEdit * edit, const vfs_path_t * filename_vpath, struct stat 
     /* Check what we have opened */
     if (mc_fstat (file, st) < 0)
     {
-        char *filename;
-
-        filename = vfs_path_to_str (filename_vpath);
-        errmsg = g_strdup_printf (_("Cannot get size/permissions for %s"), filename);
-        g_free (filename);
+        errmsg = g_strdup_printf (_("Cannot get size/permissions for %s"), filename_vpath->str);
         goto cleanup;
     }
 
     /* We want to open regular files only */
     if (!S_ISREG (st->st_mode))
     {
-        char *filename;
-
-        filename = vfs_path_to_str (filename_vpath);
-        errmsg = g_strdup_printf (_("\"%s\" is not a regular file"), filename);
-        g_free (filename);
+        errmsg = g_strdup_printf (_("\"%s\" is not a regular file"), filename_vpath->str);
         goto cleanup;
     }
 
@@ -389,13 +365,7 @@ check_file_access (WEdit * edit, const vfs_path_t * filename_vpath, struct stat 
         edit->delete_file = 0;
 
     if (st->st_size >= SIZE_LIMIT)
-    {
-        char *filename;
-
-        filename = vfs_path_to_str (filename_vpath);
-        errmsg = g_strdup_printf (_("File \"%s\" is too large"), filename);
-        g_free (filename);
-    }
+        errmsg = g_strdup_printf (_("File \"%s\" is too large"), filename_vpath->str);
 
   cleanup:
     (void) mc_close (file);

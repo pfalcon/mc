@@ -99,26 +99,22 @@ START_TEST (test_mc_mkstemps)
 {
     /* given */
     vfs_path_t *pname_vpath = NULL;
-    char *pname = NULL;
     char *begin_pname;
     int fd;
 
     /* when */
     fd = mc_mkstemps (&pname_vpath, "mctest-", NULL);
-    if (fd != -1)
-        pname = vfs_path_to_str (pname_vpath);
     begin_pname = g_build_filename (mc_tmpdir (), "mctest-", NULL);
 
     /* then */
-    vfs_path_free (pname_vpath);
     close (fd);
     mctest_assert_int_ne (fd, -1);
-    fail_unless (g_file_test (pname, G_FILE_TEST_EXISTS | G_FILE_TEST_IS_REGULAR),
-                 "\nNo such file: %s\n", pname);
-    unlink (pname);
-    fail_unless (strncmp (pname, begin_pname, strlen (begin_pname)) == 0,
-                 "\nstart of %s should be equal to %s\n", pname, begin_pname);
-    g_free (pname);
+    fail_unless (g_file_test (pname_vpath->str, G_FILE_TEST_EXISTS | G_FILE_TEST_IS_REGULAR),
+                 "\nNo such file: %s\n", pname_vpath->str);
+    unlink (pname_vpath->str);
+    fail_unless (strncmp (pname_vpath->str, begin_pname, strlen (begin_pname)) == 0,
+                 "\nstart of %s should be equal to %s\n", pname_vpath->str, begin_pname);
+    vfs_path_free (pname_vpath);
 }
 /* *INDENT-OFF* */
 END_TEST
