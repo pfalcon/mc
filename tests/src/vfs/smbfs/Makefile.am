@@ -30,7 +30,7 @@ dir__smbfs_readdir_SOURCES = \
 	dir__smbfs_readdir.c
 
 
-dir__smbfs_strerror_SOURCES = \
+internal__smbfs_strerror_SOURCES = \
 	internal__smbfs_strerror.c
 
 internal__smbfs_make_url_SOURCES = \
