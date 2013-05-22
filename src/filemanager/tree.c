@@ -1158,6 +1158,8 @@ tree_frame (WDialog * h, WTree * tree)
 {
     Widget *w = WIDGET (tree);
 
+    (void) h;
+
     tty_setcolor (NORMAL_COLOR);
     widget_erase (w);
     if (tree->is_panel)
